@@ -1,0 +1,34 @@
+[Unit]
+Description=Example Webservice Discovery
+Requires=vulcand.service
+After=vulcand.service
+Requires=example-webservice-app@%i.service
+After=example-webservice-app@%i.service
+BindsTo=example-webservice-app@%i.service
+
+[Service]
+Restart=on-failure
+RestartSec=2s
+
+EnvironmentFile=/etc/environment
+
+Environment=EXPOSED_PORT=8000
+Environment=CONTAINER_NAME=example-webservice-app-%i
+Environment=SERVICE_NAME=example-webservice
+
+ExecStartPre=-/usr/bin/env etcdctl set /vulcand/backends/${SERVICE_NAME}/backend \
+  '{ "Type": "http" }'
+ExecStartPre=/usr/bin/env bash -c '/usr/bin/env test -n "$(docker port ${CONTAINER_NAME} ${EXPOSED_PORT} | cut -d\':\' -f2)"'
+ExecStart=/usr/bin/bash -c ' \
+  publishedport=$(docker port ${CONTAINER_NAME} ${EXPOSED_PORT} | cut -d\':\' -f2); \
+  url="http://${COREOS_PRIVATE_IPV4}:$publishedport"; \
+\
+  while true; do \
+    etcdctl set /vulcand/backends/${SERVICE_NAME}/servers/${CONTAINER_NAME} \
+    " { \\"URL\\": \\"$url\\" } " --ttl 60; \
+    sleep 30; \
+  done; \
+'
+
+[X-Fleet]
+MachineOf=example-webservice-app@%i.service
